@@ -1,0 +1,8 @@
+@use "./master.scss";
+
+html,
+body {
+  scroll-behavior: smooth;
+  min-height: 95%;
+  margin: 0;
+}
