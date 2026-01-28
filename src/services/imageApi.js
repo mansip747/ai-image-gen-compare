@@ -12,7 +12,7 @@ const PROJECT_ID = import.meta.env.VITE_PROJECT_ID;
 // Generate random session ID (32 character hex string)
 const generateSessionId = () => {
   return Array.from({ length: 32 }, () =>
-    Math.floor(Math.random() * 16).toString(16)
+    Math.floor(Math.random() * 16).toString(16),
   ).join("");
 };
 
@@ -46,39 +46,62 @@ const simulateImageGeneration = (model, imagePath) => {
   });
 };
 
+// helper: base64 → data URL
+const toDataUrl = (base64) => {
+  if (!base64) return null;
+  // if backend already returns a full data URL, just use it
+  if (base64.startsWith("data:image")) return base64;
+  // otherwise assume PNG and prepend the data URL header
+  return `data:image/png;base64,${base64}`;
+};
+
 /**
  * Generate image based on query using mapping file
  */
 export const generateImage = async (query, model) => {
-  try {
-    console.log(
-      `🎨 Generating image for "${query}" using ${model.displayName}...`
-    );
+  const sessionId = generateSessionId();
 
-    // Get image paths from mapping
-    const imagePaths = getImagesForQuery(query);
+  const body = {
+    action: "query",
+    endpoint: "image",
+    session_id: sessionId,
+    query: query,
+    model_provider: model.provider,
+    model_name: model.name,
+    response_format: { type: "json" },
+    request_source: "override_params",
+  };
 
-    // Check if we got default images (meaning no mapping found)
-    if (!imagePaths || imagePaths === "NO_MAPPING") {
-      throw new Error("NO_MAPPING_FOUND");
-    }
+  const response = await fetch(`${API_BASE_URL}/query`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+    },
+    body: JSON.stringify(body),
+  });
 
-    const imagePath = imagePaths[model.name];
-
-    if (!imagePath) {
-      throw new Error(`Error for ${model.displayName}`);
-    }
-
-    // Simulate API call with 2 second delay
-    const result = await simulateImageGeneration(model, imagePath);
-
-    console.log(`✅ ${model.displayName} completed`);
-
-    return result;
-  } catch (error) {
-    console.error(`❌ ${model.displayName} failed:`, error.message);
-    throw error;
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const message = errorData.message || `HTTP error ${response.status}`;
+    throw new Error(message);
   }
+
+  const data = await response.json();
+
+  const base64 = data?.response?.[0];
+
+  if (!base64) {
+    throw new Error("No image data in response");
+  }
+
+  const imageUrl = toDataUrl(base64);
+
+  return {
+    modelKey: model.name, // 'dalle3' / 'imagen3'
+    imageUrl,
+    raw: data,
+  };
 };
 
 /**
@@ -88,20 +111,17 @@ export const generateImage = async (query, model) => {
 export const generateImagesFromAllModels = async (query) => {
   const models = Object.values(MODELS);
 
-  console.log("🚀 Starting image generation for both models...");
-  console.log("📝 Query:", query);
-
-  // Check if mapping exists before proceeding
-  if (!hasImagesForQuery(query)) {
-    return null; // Return null to indicate no mapping found
-  }
-
-  // Generate images in parallel (both take 2 seconds)
-  const promises = models.map((model) => generateImage(query, model));
-
-  const results = await Promise.all(promises);
-
-  console.log(`✅ Completed: All images generated`);
+  const results = await Promise.all(
+    models.map((m) =>
+      generateImage(query, m)
+        .then((result) => ({ success: true, ...result }))
+        .catch((err) => ({
+          success: false,
+          modelKey: m.name,
+          error: err.message,
+        })),
+    ),
+  );
 
   return results;
 };

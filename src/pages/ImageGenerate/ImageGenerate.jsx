@@ -6,10 +6,7 @@ import PromptInput from "../../components/PromptInput/PromptInput";
 import ImageGrid from "../../components/ImageGrid/ImageGrid";
 import Sidebar from "../../components/Sidebar/Sidebar";
 import { savePromptHistory } from "../../db/database";
-import {
-  generateImagesFromAllModels,
-  hasImagesForQuery,
-} from "../../services/imageApi";
+import { generateImagesFromAllModels } from "../../services/imageApi";
 import "./ImageGenerate.scss";
 
 const ImageGenerate = () => {
@@ -17,6 +14,7 @@ const ImageGenerate = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [refreshHistory, setRefreshHistory] = useState(0);
+  const [lastPrompt, setLastPrompt] = useState("");
   const [images, setImages] = useState({
     dalle3: null,
     imagen3: null,
@@ -25,21 +23,15 @@ const ImageGenerate = () => {
 
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth <= 768) {
-        setIsSidebarOpen(false); // Close sidebar by default on mobile
-      } else {
-        setIsSidebarOpen(true);
-      }
+      if (window.innerWidth <= 768) setIsSidebarOpen(false);
+      else setIsSidebarOpen(true);
     };
-
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const toggleSidebar = () => {
-    setIsSidebarOpen(!isSidebarOpen);
-  };
+  const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -48,90 +40,70 @@ const ImageGenerate = () => {
     }
 
     const currentPrompt = prompt;
-
-    // Clear the input immediately after clicking send
-    setPrompt("");
-
-    // ALWAYS clear old images when Send is clicked
-    setImages({
-      dalle3: null,
-      imagen3: null,
-    });
+    setLastPrompt(currentPrompt);
+    setPrompt(""); // clear input
+    setIsGenerating(true); // spinner on
     setErrors({});
-
-    // Set loading state IMMEDIATELY
-    setIsGenerating(true);
-
-    // Check if mapping exists
-    if (!hasImagesForQuery(currentPrompt)) {
-      // Wait 2 seconds before showing error (spinner shows during this time)
-      setTimeout(() => {
-        setIsGenerating(false); // Stop spinner
-        toast.error("❌ Could not generate images.", {
-          autoClose: 4000,
-        });
-      }, 2000);
-
-      return;
-    }
+    setImages({ dalle3: null, imagen3: null }); // clear previews to placeholders
 
     try {
-      const results = await generateImagesFromAllModels(currentPrompt);
+      toast.info("🎨 Generating images from backend...", { autoClose: 2000 });
 
-      if (results === null) {
-        toast.error("❌ Could not generate images.", {
-          autoClose: 4000,
-        });
-        return;
-      }
+      const results = await generateImagesFromAllModels(currentPrompt);
 
       const newImages = {};
       const newErrors = {};
 
-      results.forEach((result) => {
-        if (result.success) {
-          newImages[result.model] = result.imagePath;
+      results.forEach((r) => {
+        if (r.success) {
+          newImages[r.modelKey] = r.imageUrl;
         } else {
-          newErrors[result.model] = result.error || "Generation failed";
+          newErrors[r.modelKey] = r.error || "Generation failed";
         }
       });
 
-      setImages(newImages);
-      setErrors(newErrors);
+      // update UI
+      setImages((prev) => ({ ...prev, ...newImages }));
+      setErrors((prev) => ({ ...prev, ...newErrors }));
 
+      // save only if at least one success
       if (Object.keys(newImages).length > 0) {
         await savePromptHistory(currentPrompt, newImages);
-        setRefreshHistory((prev) => prev + 1);
-        console.log("✅ Saved to history:", currentPrompt);
+        setRefreshHistory((v) => v + 1);
       }
 
       const successCount = Object.keys(newImages).length;
+      const failCount = Object.keys(newErrors).length;
 
       if (successCount > 0) {
-        toast.success(`Successfully generated ${successCount} image(s)`);
-      } else {
-        toast.error("❌ Image generation failed");
+        toast.success(`Generated ${successCount} image(s)`);
       }
-    } catch (error) {
-      console.error("Error generating images:", error);
-      toast.error("Failed to generate images. Please try again.");
+      if (failCount > 0) {
+        toast.warning(`${failCount} image(s) failed`);
+      }
+      if (successCount === 0 && failCount === 0) {
+        toast.error("No images generated");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Backend error while generating images");
       setErrors({
-        dalle3: error.message,
-        imagen3: error.message,
+        dalle3: err.message,
+        imagen3: err.message,
       });
     } finally {
       setIsGenerating(false);
     }
   };
+
   const handleSelectPrompt = (historyItem) => {
     setPrompt(historyItem.prompt);
+    setLastPrompt(historyItem.prompt);
     setErrors({});
     if (historyItem.images) {
       setImages(historyItem.images);
     }
-    if (window.innerWidth <= 768) {
-      setIsSidebarOpen(false); // Close sidebar after selection on mobile
-    }
+    if (window.innerWidth <= 768) setIsSidebarOpen(false);
     toast.info("Loaded from history");
   };
 
@@ -145,9 +117,7 @@ const ImageGenerate = () => {
       />
 
       <div
-        className={`main-content ${
-          isSidebarOpen ? "sidebar-open" : "sidebar-closed"
-        }`}
+        className={`main-content ${isSidebarOpen ? "sidebar-open" : "sidebar-closed"}`}
       >
         <Header onMenuClick={toggleSidebar} />
         <PromptInput
@@ -160,6 +130,7 @@ const ImageGenerate = () => {
           images={images}
           isGenerating={isGenerating}
           errors={errors}
+          lastPrompt={lastPrompt}
         />
       </div>
     </div>

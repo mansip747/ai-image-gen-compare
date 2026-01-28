@@ -9,10 +9,6 @@ export const IMAGE_MAPPING = {
     dalle3: "/sample-images/dalle3/ice-cream.png",
     imagen3: "/sample-images/imagen3/ice-cream.png",
   },
-  "ice-cream": {
-    dalle3: "/sample-images/dalle3/ice-cream.png",
-    imagen3: "/sample-images/imagen3/ice-cream.png",
-  },
 
   // Sunset related queries
   sunset: {
