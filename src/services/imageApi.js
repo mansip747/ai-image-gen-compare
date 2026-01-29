@@ -66,7 +66,6 @@ const toDataUrl = (base64) => {
 export const generateImage = async (query, model) => {
   const sessionId = generateSessionId();
   const token = getAuthToken();
-  console.log("token => ", token);
 
   if (!token) {
     throw new Error("Not authenticated: missing projectWebToken");
