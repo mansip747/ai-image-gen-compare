@@ -6,7 +6,7 @@ import {
 // Read from environment variables
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "https://api-main-poc.aiml.asu.edu";
-const ACCESS_TOKEN = import.meta.env.VITE_ACCESS_TOKEN;
+const AUTH_STORAGE_KEY = "ai_image_projectWebToken";
 const PROJECT_ID = import.meta.env.VITE_PROJECT_ID;
 
 // Generate random session ID (32 character hex string)
@@ -14,6 +14,11 @@ const generateSessionId = () => {
   return Array.from({ length: 32 }, () =>
     Math.floor(Math.random() * 16).toString(16),
   ).join("");
+};
+
+const getAuthToken = () => {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(AUTH_STORAGE_KEY);
 };
 
 // Model configurations - ONLY 2 MODELS
@@ -60,6 +65,12 @@ const toDataUrl = (base64) => {
  */
 export const generateImage = async (query, model) => {
   const sessionId = generateSessionId();
+  const token = getAuthToken();
+  console.log("token => ", token);
+
+  if (!token) {
+    throw new Error("Not authenticated: missing projectWebToken");
+  }
 
   const body = {
     action: "query",
@@ -76,7 +87,7 @@ export const generateImage = async (query, model) => {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${ACCESS_TOKEN}`,
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(body),
   });
@@ -147,7 +158,6 @@ export const getConfig = () => {
   return {
     apiBaseUrl: API_BASE_URL,
     projectId: PROJECT_ID,
-    hasAccessToken: !!ACCESS_TOKEN,
     modelCount: Object.keys(MODELS).length,
   };
 };
